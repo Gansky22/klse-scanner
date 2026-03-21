@@ -393,17 +393,49 @@ def export_results(rows: List[dict]) -> Optional[Path]:
 
 def format_telegram_message(rows: List[dict]) -> str:
     if not rows:
-        return "📭 本轮未找到符合条件的马股爆发股。"
+        return "📭 今日没有符合条件的马股爆发股。"
 
-    lines = ["🚨 马股爆发扫描结果"]
+    lines = ["🚨 马股爆发股（明日交易计划）"]
+
     for row in rows:
+        ticker = row["ticker"]
+        close = row["close"]
+        breakout = row.get("breakout_price", close)
+        ma_short = row.get("ma_short", close)
+        rr = row.get("rr", 2)
+
+        # ===== 核心计算 =====
+        buy_low = round(breakout * 0.99, 3)
+        buy_high = round(breakout * 1.01, 3)
+
+        no_chase = round(close * 1.04, 3)
+
+        support = round(min(breakout, ma_short), 3)
+
+        stop_loss = round(support * 0.98, 3)
+
+        target1 = round(close + (close - stop_loss) * 2, 3)
+        target2 = round(close + (close - stop_loss) * 3, 3)
+
         reason_text = "、".join(row["reasons"])
+
         lines.append(
-            f"{row['signal_level']} {row['ticker']} | 价格 {row['close']} | 分数 {row['score']} | "
-            f"涨幅 {row['pct_change']}% | RSI {row['rsi']} | "
-            f"买点 {row['entry']} | 止损 {row['stop_loss']} | 目标 {row['target']} | "
-            f"RR {row['rr']} | {reason_text}"
+            f"""
+🔥 {ticker}
+价格：{close}
+📈 类型：{row.get('signal_type', '')}
+
+👉 明天策略：
+- 买点：{buy_low} – {buy_high}
+- 不追价：>{no_chase} ❌
+- 支撑位：{support}
+- 止损位：{stop_loss}
+- 目标：{target1} / {target2}
+
+🧠 逻辑：{reason_text}
+"""
         )
+
     return "\n".join(lines)
 
 
