@@ -581,5 +581,20 @@ def main() -> None:
         print("导出文件：", export_path)
 
 
+ from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "KLSE Scanner Running 🚀"
+
+@app.route("/run-scan")
+def run_scan_now():
+    settings = load_saved_settings()
+    results = run_scan(settings)
+    return jsonify(results)
+
+
 if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=3000)
