@@ -580,8 +580,7 @@ def main() -> None:
     if export_path:
         print("导出文件：", export_path)
 
-
- from flask import Flask, jsonify
+from flask import Flask, jsonify
 
 app = Flask(__name__)
 
