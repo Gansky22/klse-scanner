@@ -53,14 +53,14 @@ DEFAULT_SETTINGS = {
     "period": "6mo",
     "interval": "1d",
 
-    "volume_multiple": 1.8,
-    "breakout_days": 10,
+    "volume_multiple": 1.5,
+    "breakout_days": 20,
 
-    "rsi_min": 55,
-    "rsi_max": 68,
+    "rsi_min": 50,
+    "rsi_max": 75,
 
-    "max_day_gain": 5.0,
-    "max_ma_distance": 0.03,
+    "max_day_gain": 8.0,
+    "max_ma_distance": 0.05,
 
     "min_score": 3,
 
@@ -592,7 +592,30 @@ def home():
 def run_scan_now():
     settings = load_saved_settings()
     results = run_scan(settings)
-    return jsonify(results)
+
+    # 👉 如果没有股票
+    if not results:
+        return """
+        <h1>KLSE Scanner 🚀</h1>
+        <p>❌ 今天没有符合条件的爆发股</p>
+        <p>👉 建议：观望 / 等待</p>
+        """
+
+    # 👉 有股票就显示
+    html = "<h1>KLSE Scanner 🚀</h1>"
+
+    for row in results:
+        html += f"""
+        <div style="margin-bottom:20px; padding:10px; border:1px solid #ccc;">
+            <h3>{row['ticker']}</h3>
+            <p>价格：{row['close']}</p>
+            <p>RSI：{row.get('rsi','')}</p>
+            <p>成交量：{row.get('volume_ratio','')}x</p>
+            <p>逻辑：{", ".join(row.get('reasons', []))}</p>
+        </div>
+        """
+
+    return html
 
 
 if __name__ == "__main__":
