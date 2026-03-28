@@ -593,7 +593,6 @@ def run_scan_now():
     settings = load_saved_settings()
     results = run_scan(settings)
 
-    # 👉 如果没有股票
     if not results:
         return """
         <h1>KLSE Scanner 🚀</h1>
@@ -601,17 +600,46 @@ def run_scan_now():
         <p>👉 建议：观望 / 等待</p>
         """
 
-    # 👉 有股票就显示
-    html = "<h1>KLSE Scanner 🚀</h1>"
+    # 👉 排序（最强在前）
+    results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)
 
-    for row in results:
+    # 👉 只取 Top 3
+    top_results = results[:3]
+
+    html = "<h1>⭐ Top 3 最强爆发股</h1>"
+
+    for row in top_results:
+        close = row["close"]
+        breakout = row.get("breakout_price", close)
+        ma_short = row.get("ma_short", close)
+
+        buy_low = round(breakout * 0.99, 3)
+        buy_high = round(breakout * 1.01, 3)
+        no_chase = round(close * 1.04, 3)
+        support = round(min(breakout, ma_short), 3)
+        stop_loss = round(support * 0.98, 3)
+        target1 = round(close + (close - stop_loss) * 2, 3)
+        target2 = round(close + (close - stop_loss) * 3, 3)
+
+        # 👉 判断类型（重点🔥）
+        if close > breakout:
+            signal = "突破买 🚀"
+        elif close > ma_short:
+            signal = "回踩买 📈"
+        else:
+            signal = "观察 👀"
+
         html += f"""
-        <div style="margin-bottom:20px; padding:10px; border:1px solid #ccc;">
-            <h3>{row['ticker']}</h3>
-            <p>价格：{row['close']}</p>
-            <p>RSI：{row.get('rsi','')}</p>
-            <p>成交量：{row.get('volume_ratio','')}x</p>
-            <p>逻辑：{", ".join(row.get('reasons', []))}</p>
+        <div style="margin-bottom:20px; padding:15px; border:1px solid #ccc;">
+            <h2>{row['ticker']}</h2>
+            <p>👉 类型：{signal}</p>
+            <p>价格：{close}</p>
+            <p>买点：{buy_low} - {buy_high}</p>
+            <p>不追价：>{no_chase}</p>
+            <p>支撑位：{support}</p>
+            <p>止损：{stop_loss}</p>
+            <p>目标：{target1} / {target2}</p>
+            <p>逻辑：{", ".join(row.get("reasons", []))}</p>
         </div>
         """
 
