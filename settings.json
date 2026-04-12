@@ -3,11 +3,11 @@
   "period": "6mo",
   "interval": "1d",
   "volume_multiple": 1.8,
-  "breakout_days": 10,
-  "rsi_min": 55,
-  "rsi_max": 68,
-  "max_day_gain": 5.0,
-  "max_ma_distance": 0.03,
+  "breakout_days": 20,
+  "rsi_min": 52,
+  "rsi_max": 72,
+  "max_day_gain": 6.5,
+  "max_ma_distance": 0.05,
   "min_score": 3,
   "ma_short": 20,
   "ma_long": 50,
@@ -15,7 +15,5 @@
   "max_results": 5,
   "min_price": 0.3,
   "max_price": 20.0,
-  "min_avg_volume": 200000,
-  "telegram_bot_token": "8618402648:AAHYKbqBKr5QxhOLV_989acZkrB8FUwNw5I",
-  "telegram_chat_id": "1152191884"
+  "min_avg_volume": 200000
 }
