@@ -26,7 +26,7 @@
   "ma_short": 20,
   "ma_long": 50,
   "risk_reward": 2.0,
-  "scan_times": ["12:35", "15:30", "17:10"],
+  "scan_times": ["04:35", "07:30", "09:10"],
   "telegram_bot_token": "8618402648:AAHYKbqBKr5QxhOLV_989acZkrB8FUwNw5I",
   "telegram_chat_id": "1152191884"
 }

@@ -8,6 +8,7 @@ import schedule
 import threading
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 app = Flask(__name__)
 
@@ -284,7 +285,7 @@ def run_scan():
 # 格式化讯息
 # =========================
 def format_message(sector_results):
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now_str = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).strftime("%Y-%m-%d %H:%M")
     lines = [f"📈 马股扫描结果", f"时间: {now_str}", ""]
 
     has_result = False
