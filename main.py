@@ -78,12 +78,27 @@ def add_indicators(df, settings):
     ma_long = settings["ma_long"]
     breakout_days = settings["breakout_days"]
 
-    df["MA_SHORT"] = df["Close"].rolling(ma_short).mean()
-    df["MA_LONG"] = df["Close"].rolling(ma_long).mean()
-    df["VOL_AVG_20"] = df["Volume"].rolling(20).mean()
-    df["BREAKOUT_HIGH"] = df["High"].shift(1).rolling(breakout_days).max()
+    # 先把可能变成 DataFrame 的列强制转成单列 Series
+    close = df["Close"]
+    high = df["High"]
+    volume = df["Volume"]
+    open_price = df["Open"]
 
-    delta = df["Close"].diff()
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    if isinstance(high, pd.DataFrame):
+        high = high.iloc[:, 0]
+    if isinstance(volume, pd.DataFrame):
+        volume = volume.iloc[:, 0]
+    if isinstance(open_price, pd.DataFrame):
+        open_price = open_price.iloc[:, 0]
+
+    df["MA_SHORT"] = close.rolling(ma_short).mean()
+    df["MA_LONG"] = close.rolling(ma_long).mean()
+    df["VOL_AVG_20"] = volume.rolling(20).mean()
+    df["BREAKOUT_HIGH"] = high.shift(1).rolling(breakout_days).max()
+
+    delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
     avg_gain = gain.rolling(14).mean()
@@ -91,7 +106,8 @@ def add_indicators(df, settings):
     rs = avg_gain / avg_loss
     df["RSI"] = 100 - (100 / (1 + rs))
 
-    df["DAY_GAIN_PCT"] = (df["Close"] - df["Open"]) / df["Open"] * 100
+    df["DAY_GAIN_PCT"] = (close - open_price) / open_price * 100
+
     return df
 
 
