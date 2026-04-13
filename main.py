@@ -43,7 +43,7 @@ def send_telegram_message(text, bot_token, chat_id):
 
 
 # =========================
-# 下载数据
+# 下载股票数据
 # =========================
 def get_stock_data(ticker, period, interval):
     try:
@@ -78,7 +78,6 @@ def add_indicators(df, settings):
     ma_long = settings["ma_long"]
     breakout_days = settings["breakout_days"]
 
-    # 先把可能变成 DataFrame 的列强制转成单列 Series
     close = df["Close"]
     high = df["High"]
     volume = df["Volume"]
@@ -219,6 +218,15 @@ def scan_one_stock(ticker, settings):
 
     chase_note = "不追价，等靠近买点更稳" if close > buy_point * 1.03 else "可观察突破延续性"
 
+    # ===== 信号分级 =====
+    signal = "🔴 弱"
+    if score >= 7 and volume_ratio >= 2.0 and close_near_high and trend_ok:
+        signal = "🟢 强"
+    elif score >= 5 and volume_ratio >= settings["volume_multiple"] and above_ma:
+        signal = "🟡 观察"
+    else:
+        signal = "🔴 弱"
+
     return {
         "ticker": ticker,
         "close": round(close, 3),
@@ -229,6 +237,7 @@ def scan_one_stock(ticker, settings):
         "rsi": round(rsi, 2),
         "day_gain_pct": round(day_gain_pct, 2),
         "score": score,
+        "signal": signal,
         "reasons": reasons,
         "buy_point": buy_point,
         "support": support,
@@ -239,74 +248,99 @@ def scan_one_stock(ticker, settings):
 
 
 # =========================
-# 扫描全部
+# 按行业扫描
 # =========================
-def build_ticker_list(settings):
+def scan_all_by_sector(settings):
     sectors = settings.get("sectors", {})
-    all_tickers = []
+    sector_results = {}
 
     for sector_name, ticker_list in sectors.items():
-        for ticker in ticker_list:
-            if ticker and ticker not in all_tickers:
-                all_tickers.append(ticker)
+        results = []
 
-    return all_tickers
+        print(f"\n=== 扫描行业: {sector_name} ===")
+
+        for ticker in ticker_list:
+            print("Scanning:", ticker)
+            try:
+                result = scan_one_stock(ticker, settings)
+                if result:
+                    result["sector"] = sector_name
+                    results.append(result)
+            except Exception as e:
+                print(f"{ticker} 扫描失败: {e}")
+            time.sleep(0.2)
+
+        results.sort(key=lambda x: x["score"], reverse=True)
+        sector_results[sector_name] = results[:6]
+
+    return sector_results
 
 
 def run_scan():
     settings = load_settings()
-    tickers = build_ticker_list(settings)
-    results = []
-
-    print(f"总扫描股票数: {len(tickers)}")
-
-    for ticker in tickers:
-        print("Scanning:", ticker)
-        result = scan_one_stock(ticker, settings)
-        if result:
-            results.append(result)
-        time.sleep(0.2)
-
-    results.sort(key=lambda x: x["score"], reverse=True)
-    return results[:settings["max_results"]]
+    sector_results = scan_all_by_sector(settings)
+    return sector_results
 
 
 # =========================
 # 格式化讯息
 # =========================
-def format_message(results):
+def format_message(sector_results):
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-    if not results:
-        return f"📉 马股扫描结果\n时间: {now_str}\n\n今天没有找到符合条件的股票。"
-
     lines = [f"📈 马股扫描结果", f"时间: {now_str}", ""]
 
-    for i, r in enumerate(results, start=1):
-        lines.append(
-            f"{i}. {r['ticker']}\n"
-            f"现价: RM{r['close']}\n"
-            f"量比: {r['volume_ratio']}x\n"
-            f"RSI: {r['rsi']}\n"
-            f"买点参考: RM{r['buy_point']}\n"
-            f"支撑位: RM{r['support']}\n"
-            f"止损位: RM{r['stop_loss']}\n"
-            f"TP1参考: RM{r['tp1']}\n"
-            f"原因: {'、'.join(r['reasons'])}\n"
-            f"提醒: {r['chase_note']}\n"
-        )
+    has_result = False
+
+    sector_name_map = {
+        "consumer": "消费",
+        "industrial": "工业",
+        "construction": "建筑",
+        "technology": "科技",
+        "financial": "金融",
+        "property": "产业",
+        "plantation": "种植",
+        "reit": "REIT",
+        "energy": "能源",
+        "healthcare": "医疗",
+        "telecom_media": "电讯媒体",
+        "transport_logistics": "交通物流",
+        "utilities": "公用事业"
+    }
+
+    for sector_key, items in sector_results.items():
+        if not items:
+            continue
+
+        has_result = True
+        sector_title = sector_name_map.get(sector_key, sector_key)
+        lines.append(f"【{sector_title} Top 6】")
+
+        for i, r in enumerate(items, start=1):
+            lines.append(
+                f"{i}. {r['signal']} {r['ticker']}\n"
+                f"现价: RM{r['close']}\n"
+                f"量比: {r['volume_ratio']}x | RSI: {r['rsi']}\n"
+                f"买点: RM{r['buy_point']} | 支撑: RM{r['support']} | 止损: RM{r['stop_loss']}\n"
+                f"TP1: RM{r['tp1']}\n"
+                f"原因: {'、'.join(r['reasons'])}\n"
+                f"提醒: {r['chase_note']}\n"
+            )
+
+    if not has_result:
+        return f"📉 马股扫描结果\n时间: {now_str}\n\n今天没有找到符合条件的股票。"
 
     return "\n".join(lines)
 
 
 # =========================
-# 自动任务
+# 自动扫描
 # =========================
 def auto_scan_job():
     print("⏰ 自动扫描开始...")
     settings = load_settings()
-    results = run_scan()
-    message = format_message(results)
+    sector_results = run_scan()
+    message = format_message(sector_results)
+
     send_telegram_message(
         message,
         settings.get("telegram_bot_token"),
@@ -344,8 +378,8 @@ def health():
 @app.route("/run-scan")
 def run_scan_now():
     settings = load_settings()
-    results = run_scan()
-    message = format_message(results)
+    sector_results = run_scan()
+    message = format_message(sector_results)
 
     send_telegram_message(
         message,
@@ -353,7 +387,7 @@ def run_scan_now():
         settings.get("telegram_chat_id")
     )
 
-    return jsonify(results)
+    return jsonify(sector_results)
 
 
 # =========================
