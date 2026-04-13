@@ -199,11 +199,9 @@ def scan_one_stock(ticker, settings):
 
     passed = (
         breakout
-        and volume_ok
         and above_ma
         and rsi_ok
         and day_gain_ok
-        and ma_distance_ok
         and score >= min_score
     )
 
@@ -220,9 +218,9 @@ def scan_one_stock(ticker, settings):
 
     # ===== 信号分级 =====
     signal = "🔴 弱"
-    if score >= 7 and volume_ratio >= 2.0 and close_near_high and trend_ok:
+    if score >= 6 and volume_ratio >= 1.5 and above_ma and trend_ok:
         signal = "🟢 强"
-    elif score >= 5 and volume_ratio >= settings["volume_multiple"] and above_ma:
+    elif score >= 4 and above_ma:
         signal = "🟡 观察"
     else:
         signal = "🔴 弱"
