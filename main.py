@@ -4,6 +4,9 @@ import pandas as pd
 import requests
 import json
 import os
+import schedule
+import threading
+import time
 from datetime import datetime
 
 app = Flask(__name__)
@@ -80,7 +83,6 @@ def add_indicators(df, settings):
     df["VOL_AVG_20"] = df["Volume"].rolling(20).mean()
     df["BREAKOUT_HIGH"] = df["High"].shift(1).rolling(breakout_days).max()
 
-    # RSI
     delta = df["Close"].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -89,14 +91,12 @@ def add_indicators(df, settings):
     rs = avg_gain / avg_loss
     df["RSI"] = 100 - (100 / (1 + rs))
 
-    # 当天涨幅 %
     df["DAY_GAIN_PCT"] = (df["Close"] - df["Open"]) / df["Open"] * 100
-
     return df
 
 
 # =========================
-# 单只扫描
+# 单只股票扫描
 # =========================
 def scan_one_stock(ticker, settings):
     df = get_stock_data(
@@ -128,6 +128,12 @@ def scan_one_stock(ticker, settings):
     rsi = float(last["RSI"]) if pd.notna(last["RSI"]) else 0
     day_gain_pct = float(last["DAY_GAIN_PCT"]) if pd.notna(last["DAY_GAIN_PCT"]) else 0
 
+    rsi_min = settings.get("rsi_min", 48)
+    rsi_max = settings.get("rsi_max", 75)
+    max_day_gain = settings.get("max_day_gain", 8.0)
+    max_ma_distance = settings.get("max_ma_distance", 0.08)
+    min_score = settings.get("min_score", 3)
+
     if close < settings["min_price"] or close > settings["max_price"]:
         return None
 
@@ -145,9 +151,9 @@ def scan_one_stock(ticker, settings):
     above_ma = close > ma_short > 0
     trend_ok = close > ma_short > ma_long > 0
     close_near_high = close >= low + (high - low) * 0.75 if high > low else False
-    rsi_ok = settings["rsi_min"] <= rsi <= settings["rsi_max"]
-    day_gain_ok = day_gain_pct <= settings["max_day_gain"]
-    ma_distance_ok = ma_distance <= settings["max_ma_distance"]
+    rsi_ok = rsi_min <= rsi <= rsi_max
+    day_gain_ok = day_gain_pct <= max_day_gain
+    ma_distance_ok = ma_distance <= max_ma_distance
 
     reasons = []
     score = 0
@@ -183,7 +189,7 @@ def scan_one_stock(ticker, settings):
         and rsi_ok
         and day_gain_ok
         and ma_distance_ok
-        and score >= settings["min_score"]
+        and score >= min_score
     )
 
     if not passed:
@@ -219,23 +225,38 @@ def scan_one_stock(ticker, settings):
 # =========================
 # 扫描全部
 # =========================
+def build_ticker_list(settings):
+    sectors = settings.get("sectors", {})
+    all_tickers = []
+
+    for sector_name, ticker_list in sectors.items():
+        for ticker in ticker_list:
+            if ticker and ticker not in all_tickers:
+                all_tickers.append(ticker)
+
+    return all_tickers
+
+
 def run_scan():
     settings = load_settings()
-    tickers = [x.strip() for x in settings["tickers"].split(",") if x.strip()]
+    tickers = build_ticker_list(settings)
     results = []
+
+    print(f"总扫描股票数: {len(tickers)}")
 
     for ticker in tickers:
         print("Scanning:", ticker)
         result = scan_one_stock(ticker, settings)
         if result:
             results.append(result)
+        time.sleep(0.2)
 
     results.sort(key=lambda x: x["score"], reverse=True)
     return results[:settings["max_results"]]
 
 
 # =========================
-# 输出讯息
+# 格式化讯息
 # =========================
 def format_message(results):
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -263,16 +284,47 @@ def format_message(results):
 
 
 # =========================
-# 首页
+# 自动任务
+# =========================
+def auto_scan_job():
+    print("⏰ 自动扫描开始...")
+    settings = load_settings()
+    results = run_scan()
+    message = format_message(results)
+    send_telegram_message(
+        message,
+        settings.get("telegram_bot_token"),
+        settings.get("telegram_chat_id")
+    )
+    print("✅ 自动扫描完成")
+
+
+def scheduler_loop():
+    settings = load_settings()
+    scan_times = settings.get("scan_times", ["12:35", "15:30", "17:10"])
+
+    for t in scan_times:
+        schedule.every().day.at(t).do(auto_scan_job)
+        print(f"已设置自动扫描时间: {t}")
+
+    while True:
+        schedule.run_pending()
+        time.sleep(20)
+
+
+# =========================
+# 路由
 # =========================
 @app.route("/")
 def home():
     return "KLSE Scanner Running"
 
 
-# =========================
-# 手动扫描
-# =========================
+@app.route("/health")
+def health():
+    return "OK"
+
+
 @app.route("/run-scan")
 def run_scan_now():
     settings = load_settings()
@@ -294,4 +346,7 @@ def run_scan_now():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print("Using port:", port)
+
+    threading.Thread(target=scheduler_loop, daemon=True).start()
+
     app.run(host="0.0.0.0", port=port)
