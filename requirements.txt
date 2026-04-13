@@ -1,7 +1,4 @@
-numpy
+flask
 pandas
 requests
 yfinance
-pytz
-flask
-schedule
