@@ -1,401 +1,809 @@
-from flask import Flask, jsonify
-import yfinance as yf
-import pandas as pd
-import requests
-import json
 import os
-import schedule
-import threading
 import time
+import threading
 from datetime import datetime
-from zoneinfo import ZoneInfo
+from collections import defaultdict
+
+import requests
+import pandas as pd
+import yfinance as yf
+import schedule
+from flask import Flask, jsonify
+from pytz import timezone
 
 app = Flask(__name__)
 
+# =========================
+# 基本设定
+# =========================
+TZ = timezone("Asia/Kuala_Lumpur")
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+ENABLE_TELEGRAM = os.getenv("ENABLE_TELEGRAM", "true").lower() == "true"
+PORT = int(os.getenv("PORT", 8080))
 
 # =========================
-# 读取设置
+# 股票池（可自行继续加）
+# yfinance 马股代码通常用 .KL
 # =========================
-def load_settings():
-    with open("settings.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+STOCK_POOLS = {
+    "建筑": [
+        "GAMUDA.KL", "IJM.KL", "SUNCON.KL", "KERJAYA.KL", "MRCB.KL", "WCT.KL",
+        "HOHUP.KL", "MUDAJYA.KL", "PESONA.KL", "TRC.KL", "ECONBHD.KL", "DKLS.KL"
+    ],
+    "产业": [
+        "MAHSING.KL", "UOADEV.KL", "SUNWAY.KL", "SPSETIA.KL", "MATRIX.KL", "ECOWLD.KL",
+        "LBS.KL", "MKH.KL", "PARAMON.KL", "IOIPG.KL", "TITIJYA.KL", "KSL.KL"
+    ],
+    "工业产品": [
+        "PMETAL.KL", "PANTECH.KL", "ANNJOO.KL", "CSCSTEL.KL", "HEXIND.KL", "SSTEEL.KL",
+        "HIL.KL", "KOBAY.KL", "UNIMECH.KL", "LYC.KL", "CHOOBEE.KL", "ENGTEX.KL"
+    ],
+    "科技": [
+        "INARI.KL", "MPI.KL", "DSONIC.KL", "FRONTKN.KL", "GENETEC.KL", "GREATEC.KL",
+        "UWC.KL", "VITROX.KL", "MI.KL", "OPSTAR.KL", "SNS.KL", "ITMAX.KL"
+    ],
+    "能源": [
+        "DIALOG.KL", "VELESTO.KL", "HIBISCS.KL", "DAYANG.KL", "CARIMIN.KL", "DELEUM.KL",
+        "YINSON.KL", "PENERGY.KL", "UZMA.KL", "SAPNRG.KL", "T7GLOBAL.KL", "PETRONM.KL"
+    ],
+    "公用事业": [
+        "TENAGA.KL", "YTLPOWR.KL", "MALAKOF.KL", "RANHILL.KL", "MNHLDG.KL", "EDEN.KL",
+        "PBA.KL", "SALCON.KL", "KPOWER.KL", "CENERGY.KL", "TALIWRK.KL", "KEINHIN.KL"
+    ],
+    "消费": [
+        "QL.KL", "NESTLE.KL", "F&N.KL", "SPRITZER.KL", "CARLSBG.KL", "HEIM.KL",
+        "AEON.KL", "MRDIY.KL", "ECOSHOP.KL", "PADINI.KL", "BONIA.KL", "ORIENTAL.KL"
+    ],
+    "医疗": [
+        "IHH.KL", "KPJ.KL", "PHARMA.KL", "TMCLIFE.KL", "CAREPLS.KL", "KOSSAN.KL",
+        "TOPGLOV.KL", "SUPERMX.KL", "HARTA.KL", "DUOPHARMA.KL", "LKL.KL", "YSPSAH.KL"
+    ],
+    "交通物流": [
+        "MISC.KL", "WESTPORTS.KL", "TASCO.KL", "HARBOUR.KL", "PRKCORP.KL", "AIRPORT.KL",
+        "POS.KL", "FM.KL", "DKSH.KL", "GDEX.KL", "SWIFT.KL", "KTM.KL"
+    ],
+    "种植": [
+        "SIMEPLT.KL", "IOICORP.KL", "KLK.KL", "FGV.KL", "TAANN.KL", "BKAWAN.KL",
+        "BPLANT.KL", "JTIASA.KL", "BALU.KL", "HSPLANT.KL", "SOP.KL", "TSH.KL"
+    ],
+    "金融": [
+        "MAYBANK.KL", "PBBANK.KL", "CIMB.KL", "RHB.KL", "AMBANK.KL", "HLBANK.KL",
+        "ABMB.KL", "AFFIN.KL", "ALLIANCE.KL", "MBSB.KL", "BIMB.KL", "HLFG.KL"
+    ],
+    "电信": [
+        "TM.KL", "MAXIS.KL", "CELCOMDIGI.KL", "TIME.KL", "AXIATA.KL", "REDTONE.KL",
+        "OCK.KL", "REACH.KL", "BINACOM.KL", "OPCOM.KL", "NEXG.KL", "XOX.KL"
+    ],
+    "可再生能源/主题股": [
+        "SLVEST.KL", "CYPARK.KL", "SAMAIDEN.KL", "SUNVIEW.KL", "KINERGY.KL", "SUNZEN.KL",
+        "PNEPCB.KL", "CORAZA.KL", "TEXCYCL.KL", "WCT.KL", "GENTING.KL", "PETRONASDAG.KL"
+    ]
+}
 
+ALL_TICKERS = []
+_seen = set()
+for sector, tickers in STOCK_POOLS.items():
+    for t in tickers:
+        if t not in _seen:
+            _seen.add(t)
+            ALL_TICKERS.append(t)
 
 # =========================
 # Telegram
 # =========================
-def send_telegram_message(text, bot_token, chat_id):
-    if not bot_token or not chat_id:
-        print("Telegram 未设置，跳过发送")
+def send_telegram_message(text: str):
+    if not ENABLE_TELEGRAM or not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram 未启用或缺少 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
         return
 
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
-        "chat_id": chat_id,
-        "text": text
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "Markdown"
     }
 
     try:
-        r = requests.post(url, data=payload, timeout=15)
-        print("Telegram status:", r.status_code)
-        print("Telegram response:", r.text)
+        r = requests.post(url, json=payload, timeout=20)
+        print("Telegram:", r.status_code, r.text)
     except Exception as e:
-        print("Telegram error:", e)
-
+        print("Telegram 发送失败:", e)
 
 # =========================
-# 下载股票数据
+# 工具函数
 # =========================
-def get_stock_data(ticker, period, interval):
+def safe_round(x, n=3):
+    try:
+        if x is None or pd.isna(x):
+            return None
+        return round(float(x), n)
+    except:
+        return None
+
+def format_price(v):
+    if v is None:
+        return "-"
+    return f"{v:.3f}"
+
+def compute_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = gain / loss.replace(0, 1e-9)
+    return 100 - (100 / (1 + rs))
+
+def compute_obv(close, volume):
+    direction = close.diff().fillna(0)
+    signed_volume = volume.where(direction > 0, -volume.where(direction < 0, 0))
+    return signed_volume.fillna(0).cumsum()
+
+def compute_cmf(df, period=20):
+    high = df["High"]
+    low = df["Low"]
+    close = df["Close"]
+    volume = df["Volume"]
+
+    mfm = ((close - low) - (high - close)) / (high - low).replace(0, 1e-9)
+    mfv = mfm * volume
+    cmf = mfv.rolling(period).sum() / volume.rolling(period).sum().replace(0, 1e-9)
+    return cmf
+
+def compute_mfi(df, period=14):
+    typical = (df["High"] + df["Low"] + df["Close"]) / 3
+    money_flow = typical * df["Volume"]
+    delta = typical.diff()
+
+    positive_flow = money_flow.where(delta > 0, 0.0)
+    negative_flow = money_flow.where(delta < 0, 0.0)
+
+    pos_sum = positive_flow.rolling(period).sum()
+    neg_sum = negative_flow.abs().rolling(period).sum().replace(0, 1e-9)
+
+    mfr = pos_sum / neg_sum
+    return 100 - (100 / (1 + mfr))
+
+def get_sector(ticker):
+    for sector, tickers in STOCK_POOLS.items():
+        if ticker in tickers:
+            return sector
+    return "其他"
+
+# =========================
+# 更强版吸筹判断
+# =========================
+def detect_accumulation(df):
+    """
+    返回:
+        is_accumulating: bool
+        reasons: list[str]
+        acc_grade: str -> A / B / C / -
+        extra_info: dict
+    """
+    if len(df) < 80:
+        return False, [], "-", {}
+
+    df = df.copy()
+
+    close = df["Close"]
+    open_ = df["Open"]
+    high = df["High"]
+    low = df["Low"]
+    volume = df["Volume"]
+
+    last_close = float(close.iloc[-1])
+    last_open = float(open_.iloc[-1])
+    last_high = float(high.iloc[-1])
+    last_low = float(low.iloc[-1])
+    last_vol = float(volume.iloc[-1])
+
+    ma5 = float(close.rolling(5).mean().iloc[-1])
+    ma10 = float(close.rolling(10).mean().iloc[-1])
+    ma20 = float(close.rolling(20).mean().iloc[-1])
+    ma50 = float(close.rolling(50).mean().iloc[-1])
+
+    vol5 = float(volume.rolling(5).mean().iloc[-1])
+    vol20 = float(volume.rolling(20).mean().iloc[-1])
+
+    obv = compute_obv(close, volume)
+    cmf_series = compute_cmf(df, 20)
+    mfi_series = compute_mfi(df, 14)
+    rsi_series = compute_rsi(close, 14)
+
+    obv_now = float(obv.iloc[-1])
+    obv_5 = float(obv.iloc[-6]) if len(obv) >= 6 else float(obv.iloc[0])
+    obv_10 = float(obv.iloc[-11]) if len(obv) >= 11 else float(obv.iloc[0])
+    obv_20 = float(obv.iloc[-21]) if len(obv) >= 21 else float(obv.iloc[0])
+
+    cmf_now = float(cmf_series.iloc[-1]) if not pd.isna(cmf_series.iloc[-1]) else 0.0
+    cmf_prev = float(cmf_series.iloc[-5]) if len(cmf_series) >= 5 and not pd.isna(cmf_series.iloc[-5]) else cmf_now
+
+    mfi_now = float(mfi_series.iloc[-1]) if not pd.isna(mfi_series.iloc[-1]) else 50.0
+    mfi_prev = float(mfi_series.iloc[-4]) if len(mfi_series) >= 4 and not pd.isna(mfi_series.iloc[-4]) else mfi_now
+
+    rsi_now = float(rsi_series.iloc[-1]) if not pd.isna(rsi_series.iloc[-1]) else 50.0
+
+    day_range = max(last_high - last_low, 1e-9)
+    body = abs(last_close - last_open)
+    body_ratio = body / day_range
+    upper_shadow = last_high - max(last_open, last_close)
+    upper_shadow_ratio = upper_shadow / day_range
+    close_near_high = (last_high - last_close) / day_range <= 0.30
+
+    recent_10_high = float(high.iloc[-10:].max())
+    recent_10_low = float(low.iloc[-10:].min())
+    recent_20_high = float(high.iloc[-20:].max())
+    recent_20_low = float(low.iloc[-20:].min())
+
+    box_range_10 = (recent_10_high - recent_10_low) / max(recent_10_low, 1e-9)
+    box_range_20 = (recent_20_high - recent_20_low) / max(recent_20_low, 1e-9)
+    box_tight = box_range_10 <= 0.10 or box_range_20 <= 0.16
+
+    low_1 = float(low.iloc[-5:].min())
+    low_2 = float(low.iloc[-10:-5].min())
+    low_3 = float(low.iloc[-15:-10].min()) if len(df) >= 15 else low_2
+
+    high_1 = float(high.iloc[-5:].max())
+    high_2 = float(high.iloc[-10:-5].max())
+    high_3 = float(high.iloc[-15:-10].max()) if len(df) >= 15 else high_2
+
+    higher_lows = low_1 >= low_2 * 0.99 and low_2 >= low_3 * 0.99
+    highs_not_falling = high_1 >= high_2 * 0.97 and high_2 >= high_3 * 0.97
+
+    vol_ratio_today = last_vol / max(vol20, 1e-9)
+
+    up_days = df[close.diff() > 0].tail(8)
+    down_days = df[close.diff() < 0].tail(8)
+    up_vol_avg = float(up_days["Volume"].mean()) if len(up_days) > 0 else vol20
+    down_vol_avg = float(down_days["Volume"].mean()) if len(down_days) > 0 else vol20
+    up_down_volume_structure = up_vol_avg >= down_vol_avg * 1.05
+
+    quiet_base = vol5 <= vol20 * 1.02
+    gentle_expand = vol_ratio_today >= 1.15 and vol_ratio_today <= 2.3
+    dry_then_expand = quiet_base and gentle_expand
+
+    obv_rising = obv_now > obv_5 > obv_10
+    obv_long_rising = obv_now > obv_10 > obv_20
+    cmf_positive = cmf_now > 0.03
+    cmf_improving = cmf_now >= cmf_prev
+    mfi_healthy = 48 <= mfi_now <= 78
+    mfi_rising = mfi_now >= mfi_prev
+    rsi_healthy = 50 <= rsi_now <= 72
+
+    price_above_key_ma = (
+        last_close >= ma10 * 0.98 and
+        last_close >= ma20 * 0.97 and
+        last_close >= ma50 * 0.94
+    )
+
+    ma_structure_ok = (
+        ma10 >= ma20 * 0.98 and
+        ma20 >= ma50 * 0.95
+    )
+
+    recent_support = float(close.iloc[-15:-1].rolling(5).min().dropna().min()) if len(df) >= 20 else recent_20_low
+    fake_breakdown_recover = (
+        low.iloc[-3:].min() < recent_support * 0.985 and
+        last_close >= recent_support * 1.01
+    )
+
+    prev_20_high = float(high.iloc[-21:-1].max()) if len(df) >= 21 else recent_20_high
+    near_breakout = last_close >= prev_20_high * 0.97
+
+    gain_1d = ((last_close - float(close.iloc[-2])) / max(float(close.iloc[-2]), 1e-9)) * 100
+    gain_5d = ((last_close - float(close.iloc[-6])) / max(float(close.iloc[-6]), 1e-9)) * 100 if len(df) >= 6 else 0
+    gain_10d = ((last_close - float(close.iloc[-11])) / max(float(close.iloc[-11]), 1e-9)) * 100 if len(df) >= 11 else 0
+
+    too_hot = (
+        gain_1d >= 9 or
+        gain_5d >= 18 or
+        gain_10d >= 28 or
+        rsi_now >= 78
+    )
+
+    long_upper_shadow_risk = upper_shadow_ratio >= 0.45 and not close_near_high
+    blowoff_volume_risk = vol_ratio_today >= 2.8 and gain_1d >= 7
+    too_extended_from_ma20 = last_close > ma20 * 1.13
+    distribution_risk = long_upper_shadow_risk or blowoff_volume_risk or too_extended_from_ma20
+
+    reasons = []
+    score = 0
+
+    if box_tight:
+        score += 1
+        reasons.append("价格处于整理平台")
+    if higher_lows:
+        score += 1
+        reasons.append("低点逐步抬高")
+    if highs_not_falling:
+        score += 1
+        reasons.append("高点维持不弱")
+    if price_above_key_ma:
+        score += 1
+        reasons.append("价格稳在关键均线附近")
+    if ma_structure_ok:
+        score += 1
+        reasons.append("均线结构稳定")
+    if obv_rising:
+        score += 1
+        reasons.append("OBV短线持续上升")
+    if obv_long_rising:
+        score += 1
+        reasons.append("OBV中线持续抬高")
+    if cmf_positive:
+        score += 1
+        reasons.append("CMF显示资金净流入")
+    if cmf_improving:
+        score += 1
+        reasons.append("CMF持续改善")
+    if mfi_healthy:
+        score += 1
+        reasons.append("MFI维持健康区")
+    if mfi_rising:
+        score += 1
+        reasons.append("MFI温和上升")
+    if rsi_healthy:
+        score += 1
+        reasons.append("RSI未过热")
+    if dry_then_expand:
+        score += 2
+        reasons.append("缩量整理后开始温和放量")
+    if up_down_volume_structure:
+        score += 1
+        reasons.append("涨时放量、跌时缩量")
+    if close_near_high and body_ratio <= 0.78:
+        score += 1
+        reasons.append("收盘靠近日高")
+    if fake_breakdown_recover:
+        score += 2
+        reasons.append("疑似洗盘后重新收回")
+    if near_breakout:
+        score += 1
+        reasons.append("已接近平台突破位")
+
+    if too_hot:
+        score -= 2
+        reasons.append("短线涨幅偏大")
+    if long_upper_shadow_risk:
+        score -= 2
+        reasons.append("上影偏长，疑似有派压")
+    if blowoff_volume_risk:
+        score -= 2
+        reasons.append("爆量急拉，防冲高回落")
+    if too_extended_from_ma20:
+        score -= 1
+        reasons.append("股价偏离20MA过大")
+
+    acc_grade = "-"
+    is_accumulating = False
+
+    if score >= 11 and not distribution_risk and not too_hot:
+        acc_grade = "A"
+        is_accumulating = True
+    elif score >= 8 and not distribution_risk:
+        acc_grade = "B"
+        is_accumulating = True
+    elif score >= 6:
+        acc_grade = "C"
+        is_accumulating = True
+
+    extra_info = {
+        "acc_score": score,
+        "near_breakout": near_breakout,
+        "breakout_price": round(prev_20_high, 3),
+        "box_high": round(recent_20_high, 3),
+        "box_low": round(recent_20_low, 3),
+        "fake_breakdown_recover": fake_breakdown_recover,
+        "vol_ratio_today": round(vol_ratio_today, 2),
+        "rsi_now": round(rsi_now, 2),
+        "mfi_now": round(mfi_now, 2),
+        "cmf_now": round(cmf_now, 3),
+    }
+
+    return is_accumulating, reasons[:8], acc_grade, extra_info
+
+# =========================
+# 单股分析
+# =========================
+def analyze_ticker(ticker):
     try:
         df = yf.download(
             ticker,
-            period=period,
-            interval=interval,
+            period="6mo",
+            interval="1d",
+            auto_adjust=False,
             progress=False,
-            auto_adjust=False
+            threads=False
         )
 
         if df is None or df.empty:
             return None
 
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [col[0] for col in df.columns]
+        df = df.dropna().copy()
+        if len(df) < 80:
+            return None
 
-        return df.dropna()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [c[0] for c in df.columns]
+
+        needed_cols = ["Open", "High", "Low", "Close", "Volume"]
+        for col in needed_cols:
+            if col not in df.columns:
+                return None
+
+        close = df["Close"]
+        high = df["High"]
+        low = df["Low"]
+        volume = df["Volume"]
+
+        last_close = float(close.iloc[-1])
+        prev_close = float(close.iloc[-2])
+        last_high = float(high.iloc[-1])
+        last_low = float(low.iloc[-1])
+        last_vol = float(volume.iloc[-1])
+
+        ma10 = float(close.rolling(10).mean().iloc[-1])
+        ma20 = float(close.rolling(20).mean().iloc[-1])
+        ma50 = float(close.rolling(50).mean().iloc[-1])
+
+        vol20 = float(volume.rolling(20).mean().iloc[-1])
+        vol_ratio = (last_vol / vol20) if vol20 > 0 else 0
+
+        rsi14 = float(compute_rsi(close, 14).iloc[-1])
+
+        highest_20_prev = float(high.iloc[-21:-1].max())
+        highest_55_prev = float(high.iloc[-56:-1].max()) if len(df) >= 56 else highest_20_prev
+
+        breakout_20 = last_close > highest_20_prev * 1.01
+        breakout_55 = last_close > highest_55_prev * 1.01
+        trend_ok = last_close > ma10 > ma20 > ma50
+
+        gain_pct = ((last_close - prev_close) / prev_close) * 100 if prev_close > 0 else 0
+        range_pct = ((last_high - last_low) / last_low) * 100 if last_low > 0 else 0
+
+        reasons = []
+        score = 0
+        signal_type = []
+
+        if trend_ok:
+            score += 2
+            reasons.append("均线多头排列")
+
+        if breakout_55:
+            score += 3
+            reasons.append("突破55日新高")
+            signal_type.append("强突破")
+        elif breakout_20:
+            score += 2
+            reasons.append("突破20日平台")
+            signal_type.append("平台突破")
+
+        if vol_ratio >= 2.0:
+            score += 3
+            reasons.append("成交量爆发")
+        elif vol_ratio >= 1.5:
+            score += 2
+            reasons.append("成交量明显放大")
+        elif vol_ratio >= 1.2:
+            score += 1
+            reasons.append("成交量温和放大")
+
+        if 55 <= rsi14 <= 75:
+            score += 1
+            reasons.append("RSI健康强势")
+        elif rsi14 > 75:
+            reasons.append("RSI偏热，避免追高")
+
+        if 2 <= gain_pct <= 8:
+            score += 1
+            reasons.append("涨幅合理")
+        elif gain_pct > 9:
+            reasons.append("单日涨幅过大，慎追")
+
+        is_accumulating, acc_reasons, acc_grade, acc_info = detect_accumulation(df)
+
+        if is_accumulating:
+            if acc_grade == "A":
+                score += 4
+            elif acc_grade == "B":
+                score += 3
+            else:
+                score += 2
+
+            reasons.append(f"疑似资金吸筹（{acc_grade}级）")
+            reasons.extend(acc_reasons[:3])
+            signal_type.append(f"吸筹{acc_grade}")
+
+            if acc_info.get("near_breakout"):
+                reasons.append(f"接近突破位 {acc_info.get('breakout_price')}")
+        else:
+            if "CMF显示资金净流入" in acc_reasons or "OBV短线持续上升" in acc_reasons:
+                reasons.append("有早期资金流入迹象")
+
+        too_extended = last_close > ma20 * 1.15
+        if too_extended:
+            reasons.append("股价偏离20MA过大")
+            score -= 1
+
+        if score >= 10:
+            rank = "A"
+        elif score >= 8:
+            rank = "B"
+        elif score >= 6:
+            rank = "C"
+        else:
+            rank = "D"
+
+        buy_watch = max(ma10, highest_20_prev)
+        support = min(ma20, ma10)
+        stop_loss = support * 0.97 if support > 0 else None
+        tp1 = last_close * 1.06
+        tp2 = last_close * 1.12
+
+        selected = (
+            (breakout_20 or breakout_55 or is_accumulating) and
+            score >= 6 and
+            last_close > 0.15 and
+            last_vol > 0
+        )
+
+        if not selected:
+            return None
+
+        return {
+            "ticker": ticker,
+            "sector": get_sector(ticker),
+            "close": safe_round(last_close),
+            "gain_pct": safe_round(gain_pct, 2),
+            "range_pct": safe_round(range_pct, 2),
+            "vol_ratio": safe_round(vol_ratio, 2),
+            "rsi14": safe_round(rsi14, 2),
+            "ma10": safe_round(ma10),
+            "ma20": safe_round(ma20),
+            "ma50": safe_round(ma50),
+            "buy_watch": safe_round(buy_watch),
+            "support": safe_round(support),
+            "stop_loss": safe_round(stop_loss),
+            "tp1": safe_round(tp1),
+            "tp2": safe_round(tp2),
+            "score": score,
+            "rank": rank,
+            "signal_type": " + ".join(signal_type) if signal_type else "普通",
+            "reasons": reasons[:6],
+            "is_accumulating": is_accumulating,
+            "acc_grade": acc_grade,
+            "acc_score": acc_info.get("acc_score") if is_accumulating else None,
+            "near_breakout": acc_info.get("near_breakout") if is_accumulating else False,
+            "breakout_price": acc_info.get("breakout_price") if is_accumulating else None,
+            "box_high": acc_info.get("box_high") if is_accumulating else None,
+            "box_low": acc_info.get("box_low") if is_accumulating else None,
+        }
 
     except Exception as e:
-        print(f"{ticker} 下载失败: {e}")
+        print(f"分析 {ticker} 失败: {e}")
         return None
 
-
 # =========================
-# 指标
+# 提前预警名单
+# 条件：
+# 1) 吸筹 A/B
+# 2) 尚未突破
+# 3) 接近突破
+# 4) 距离突破 <= 5%
 # =========================
-def add_indicators(df, settings):
-    df = df.copy()
+def get_early_watchlist(results):
+    early_list = []
 
-    ma_short = settings["ma_short"]
-    ma_long = settings["ma_long"]
-    breakout_days = settings["breakout_days"]
+    for x in results:
+        signal_type = x.get("signal_type", "")
+        is_breakout = ("强突破" in signal_type) or ("平台突破" in signal_type)
 
-    close = df["Close"]
-    high = df["High"]
-    volume = df["Volume"]
-    open_price = df["Open"]
+        breakout_price = x.get("breakout_price")
+        close_price = x.get("close")
 
-    if isinstance(close, pd.DataFrame):
-        close = close.iloc[:, 0]
-    if isinstance(high, pd.DataFrame):
-        high = high.iloc[:, 0]
-    if isinstance(volume, pd.DataFrame):
-        volume = volume.iloc[:, 0]
-    if isinstance(open_price, pd.DataFrame):
-        open_price = open_price.iloc[:, 0]
+        distance_pct = None
+        if breakout_price and close_price and breakout_price > 0:
+            distance_pct = ((breakout_price - close_price) / breakout_price) * 100
 
-    df["MA_SHORT"] = close.rolling(ma_short).mean()
-    df["MA_LONG"] = close.rolling(ma_long).mean()
-    df["VOL_AVG_20"] = volume.rolling(20).mean()
-    df["BREAKOUT_HIGH"] = high.shift(1).rolling(breakout_days).max()
+        if (
+            x.get("is_accumulating") is True and
+            x.get("acc_grade") in ["A", "B"] and
+            not is_breakout and
+            x.get("near_breakout") is True and
+            distance_pct is not None and
+            0 <= distance_pct <= 5
+        ):
+            item = x.copy()
+            item["distance_to_breakout_pct"] = round(distance_pct, 2)
+            early_list.append(item)
 
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(14).mean()
-    avg_loss = loss.rolling(14).mean()
-    rs = avg_gain / avg_loss
-    df["RSI"] = 100 - (100 / (1 + rs))
-
-    df["DAY_GAIN_PCT"] = (close - open_price) / open_price * 100
-
-    return df
-
-
-# =========================
-# 单只股票扫描
-# =========================
-def scan_one_stock(ticker, settings):
-    df = get_stock_data(
-        ticker=ticker,
-        period=settings["period"],
-        interval=settings["interval"]
+    early_list = sorted(
+        early_list,
+        key=lambda z: (
+            {"A": 2, "B": 1}.get(z.get("acc_grade", "-"), 0),
+            z.get("acc_score", 0) if z.get("acc_score") is not None else 0,
+            -(100 - z.get("distance_to_breakout_pct", 999))
+        ),
+        reverse=True
     )
 
-    if df is None:
-        return None
-
-    min_bars = max(settings["ma_long"] + 5, settings["breakout_days"] + 5, 30)
-    if len(df) < min_bars:
-        return None
-
-    df = add_indicators(df, settings)
-    last = df.iloc[-1]
-
-    close = float(last["Close"])
-    high = float(last["High"])
-    low = float(last["Low"])
-    open_price = float(last["Open"])
-    volume = float(last["Volume"])
-
-    ma_short = float(last["MA_SHORT"]) if pd.notna(last["MA_SHORT"]) else 0
-    ma_long = float(last["MA_LONG"]) if pd.notna(last["MA_LONG"]) else 0
-    vol_avg = float(last["VOL_AVG_20"]) if pd.notna(last["VOL_AVG_20"]) else 0
-    breakout_high = float(last["BREAKOUT_HIGH"]) if pd.notna(last["BREAKOUT_HIGH"]) else 0
-    rsi = float(last["RSI"]) if pd.notna(last["RSI"]) else 0
-    day_gain_pct = float(last["DAY_GAIN_PCT"]) if pd.notna(last["DAY_GAIN_PCT"]) else 0
-
-    rsi_min = settings.get("rsi_min", 48)
-    rsi_max = settings.get("rsi_max", 75)
-    max_day_gain = settings.get("max_day_gain", 8.0)
-    max_ma_distance = settings.get("max_ma_distance", 0.08)
-    min_score = settings.get("min_score", 3)
-
-    if close < settings["min_price"] or close > settings["max_price"]:
-        return None
-
-    if vol_avg <= 0 or breakout_high <= 0:
-        return None
-
-    if vol_avg < settings["min_avg_volume"]:
-        return None
-
-    volume_ratio = volume / vol_avg
-    ma_distance = abs(close - ma_short) / ma_short if ma_short > 0 else 999
-
-    breakout = close > breakout_high
-    volume_ok = volume_ratio >= settings["volume_multiple"]
-    above_ma = close > ma_short > 0
-    trend_ok = close > ma_short > ma_long > 0
-    close_near_high = close >= low + (high - low) * 0.75 if high > low else False
-    rsi_ok = rsi_min <= rsi <= rsi_max
-    day_gain_ok = day_gain_pct <= max_day_gain
-    ma_distance_ok = ma_distance <= max_ma_distance
-
-    reasons = []
-    score = 0
-
-    if breakout:
-        reasons.append("突破前高")
-        score += 2
-
-    if volume_ok:
-        reasons.append("成交量放大")
-        score += 2
-
-    if above_ma:
-        reasons.append("站上短均线")
-        score += 1
-
-    if trend_ok:
-        reasons.append("均线多头")
-        score += 1
-
-    if close_near_high:
-        reasons.append("收盘靠近最高")
-        score += 1
-
-    if rsi_ok:
-        reasons.append("RSI健康")
-        score += 1
-
-    passed = (
-        breakout
-        and above_ma
-        and rsi_ok
-        and day_gain_ok
-        and score >= min_score
-    )
-
-    if not passed:
-        return None
-
-    buy_point = round(breakout_high, 3)
-    support = round(ma_short, 3)
-    stop_loss = round(min(ma_short, low), 3)
-    risk = max(buy_point - stop_loss, 0.001)
-    tp1 = round(buy_point + risk * settings["risk_reward"], 3)
-
-    chase_note = "不追价，等靠近买点更稳" if close > buy_point * 1.03 else "可观察突破延续性"
-
-    # ===== 信号分级 =====
-    signal = "🔴 弱"
-    if score >= 6 and volume_ratio >= 1.5 and above_ma and trend_ok:
-        signal = "🟢 强"
-    elif score >= 4 and above_ma:
-        signal = "🟡 观察"
-    else:
-        signal = "🔴 弱"
-
-    return {
-        "ticker": ticker,
-        "close": round(close, 3),
-        "open": round(open_price, 3),
-        "high": round(high, 3),
-        "low": round(low, 3),
-        "volume_ratio": round(volume_ratio, 2),
-        "rsi": round(rsi, 2),
-        "day_gain_pct": round(day_gain_pct, 2),
-        "score": score,
-        "signal": signal,
-        "reasons": reasons,
-        "buy_point": buy_point,
-        "support": support,
-        "stop_loss": stop_loss,
-        "tp1": tp1,
-        "chase_note": chase_note
-    }
-
+    return early_list
 
 # =========================
-# 按行业扫描
+# 扫描
 # =========================
-def scan_all_by_sector(settings):
-    sectors = settings.get("sectors", {})
-    sector_results = {}
-
-    for sector_name, ticker_list in sectors.items():
-        results = []
-
-        print(f"\n=== 扫描行业: {sector_name} ===")
-
-        for ticker in ticker_list:
-            print("Scanning:", ticker)
-            try:
-                result = scan_one_stock(ticker, settings)
-                if result:
-                    result["sector"] = sector_name
-                    results.append(result)
-            except Exception as e:
-                print(f"{ticker} 扫描失败: {e}")
-            time.sleep(0.2)
-
-        results.sort(key=lambda x: x["score"], reverse=True)
-        sector_results[sector_name] = results[:6]
-
-    return sector_results
-
-
 def run_scan():
-    settings = load_settings()
-    sector_results = scan_all_by_sector(settings)
-    return sector_results
+    now = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{now}] 开始扫描...")
+    results = []
 
+    for i, ticker in enumerate(ALL_TICKERS, start=1):
+        print(f"扫描中 {i}/{len(ALL_TICKERS)}: {ticker}")
+        result = analyze_ticker(ticker)
+        if result:
+            results.append(result)
+        time.sleep(0.5)
+
+    rank_order = {"A": 4, "B": 3, "C": 2, "D": 1}
+    acc_order = {"A": 3, "B": 2, "C": 1, "-": 0}
+
+    results = sorted(
+        results,
+        key=lambda x: (
+            rank_order.get(x["rank"], 0),
+            acc_order.get(x.get("acc_grade", "-"), 0),
+            x.get("score", 0),
+            x.get("gain_pct", 0) or 0
+        ),
+        reverse=True
+    )
+
+    print(f"扫描完成，共找到 {len(results)} 只股票")
+    return results
 
 # =========================
-# 格式化讯息
+# 讯息格式
 # =========================
-def format_message(sector_results):
-    now_str = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).strftime("%Y-%m-%d %H:%M")
-    lines = [f"📈 马股扫描结果", f"时间: {now_str}", ""]
+def build_message(results):
+    now_str = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
 
-    has_result = False
+    if not results:
+        return (
+            f"📭 *马股扫描结果* ({now_str})\n\n"
+            "今天没有发现符合条件的突破 / 吸筹股。"
+        )
 
-    sector_name_map = {
-        "consumer": "消费",
-        "industrial": "工业",
-        "construction": "建筑",
-        "technology": "科技",
-        "financial": "金融",
-        "property": "产业",
-        "plantation": "种植",
-        "reit": "REIT",
-        "energy": "能源",
-        "healthcare": "医疗",
-        "telecom_media": "电讯媒体",
-        "transport_logistics": "交通物流",
-        "utilities": "公用事业"
-    }
+    grouped = defaultdict(list)
+    for item in results:
+        grouped[item["sector"]].append(item)
 
-    for sector_key, items in sector_results.items():
-        if not items:
-            continue
+    lines = [f"📊 *马股扫描结果* ({now_str})", ""]
 
-        has_result = True
-        sector_title = sector_name_map.get(sector_key, sector_key)
-        lines.append(f"【{sector_title} Top 6】")
-
-        for i, r in enumerate(items, start=1):
+    early_watch = get_early_watchlist(results)
+    if early_watch:
+        lines.append("🟡 *主力吸筹但未突破的提前预警名单*")
+        for x in early_watch[:8]:
             lines.append(
-                f"{i}. {r['signal']} {r['ticker']}\n"
-                f"现价: RM{r['close']}\n"
-                f"量比: {r['volume_ratio']}x | RSI: {r['rsi']}\n"
-                f"买点: RM{r['buy_point']} | 支撑: RM{r['support']} | 止损: RM{r['stop_loss']}\n"
-                f"TP1: RM{r['tp1']}\n"
-                f"原因: {'、'.join(r['reasons'])}\n"
-                f"提醒: {r['chase_note']}\n"
+                f"- {x['ticker']} | 吸筹{x['acc_grade']}级 | "
+                f"现价 {format_price(x['close'])} | "
+                f"突破位 {format_price(x.get('breakout_price'))} | "
+                f"差 {x.get('distance_to_breakout_pct', '-')}%"
+                f"\n  支撑 {format_price(x['support'])} | "
+                f"观察买点 {format_price(x['buy_watch'])}"
+            )
+        lines.append("")
+
+    strong = [x for x in results if x["rank"] in ["A", "B"]]
+    if strong:
+        lines.append("🔥 *重点关注*")
+        for x in strong[:8]:
+            acc_tag = f"｜吸筹{x['acc_grade']}级" if x["is_accumulating"] else ""
+            lines.append(
+                f"*{x['ticker']}*  {x['rank']}级"
+                f"\n收盘: {format_price(x['close'])}  涨幅: {x['gain_pct']}%"
+                f"\n信号: {x['signal_type']}{acc_tag}"
+                f"\n原因: {'、'.join(x['reasons'][:3])}"
+                f"\n明天观察买点: {format_price(x['buy_watch'])}"
+                f"\n突破参考位: {format_price(x.get('breakout_price')) if x.get('breakout_price') else '-'}"
+                f"\n关键支撑位: {format_price(x['support'])}"
+                f"\n止损参考: {format_price(x['stop_loss'])}"
+                f"\nTP1: {format_price(x['tp1'])} / TP2: {format_price(x['tp2'])}"
+                f"\n提醒: 不追价，等回踩确认或放量续强再看"
+            )
+            lines.append("")
+
+    lines.append("📁 *分类结果*")
+    for sector, items in grouped.items():
+        lines.append(f"\n*{sector}*")
+        for x in items[:5]:
+            acc_tag = f" 吸筹{x['acc_grade']}" if x["is_accumulating"] else ""
+            near_breakout_tag = " 接近突破" if x.get("near_breakout") else ""
+            lines.append(
+                f"- {x['ticker']} | {x['rank']}级 | {x['signal_type']}{acc_tag}{near_breakout_tag} | "
+                f"Close {format_price(x['close'])} | Vol {x['vol_ratio']}x"
             )
 
-    if not has_result:
-        return f"📉 马股扫描结果\n时间: {now_str}\n\n今天没有找到符合条件的股票。"
+    acc_list = [x for x in results if x["is_accumulating"]]
+    if acc_list:
+        lines.append("\n💰 *资金吸筹提醒*")
+        for x in acc_list[:8]:
+            lines.append(
+                f"- {x['ticker']}：{format_price(x['close'])} | 吸筹{x['acc_grade']}级 | "
+                f"观察 {format_price(x['buy_watch'])} | "
+                f"突破 {format_price(x.get('breakout_price')) if x.get('breakout_price') else '-'} | "
+                f"支撑 {format_price(x['support'])}"
+            )
 
     return "\n".join(lines)
 
-
 # =========================
-# 自动扫描
+# 定时任务
 # =========================
-def auto_scan_job():
-    print("⏰ 自动扫描开始...")
-    settings = load_settings()
-    sector_results = run_scan()
-    message = format_message(sector_results)
+def job():
+    results = run_scan()
+    message = build_message(results)
+    send_telegram_message(message)
 
-    send_telegram_message(
-        message,
-        settings.get("telegram_bot_token"),
-        settings.get("telegram_chat_id")
-    )
-    print("✅ 自动扫描完成")
+def schedule_runner():
+    weekdays = [
+        schedule.every().monday,
+        schedule.every().tuesday,
+        schedule.every().wednesday,
+        schedule.every().thursday,
+        schedule.every().friday
+    ]
 
+    for d in weekdays:
+        d.at("09:00").do(job)
+    for d in weekdays:
+        d.at("12:30").do(job)
+    for d in weekdays:
+        d.at("17:20").do(job)
+    for d in weekdays:
+        d.at("20:30").do(job)
 
-def scheduler_loop():
-    settings = load_settings()
-    scan_times = settings.get("scan_times", ["12:35", "15:30", "17:10"])
-
-    for t in scan_times:
-        schedule.every().day.at(t).do(auto_scan_job)
-        print(f"已设置自动扫描时间: {t}")
-
+    print("定时扫描已启动（Asia/Kuala_Lumpur）")
     while True:
         schedule.run_pending()
         time.sleep(20)
 
-
 # =========================
-# 路由
+# Flask routes
 # =========================
 @app.route("/")
 def home():
-    return "KLSE Scanner Running"
-
+    return "KLSE Scanner Running with Early Watchlist"
 
 @app.route("/health")
 def health():
-    return "OK"
-
+    return jsonify({
+        "ok": True,
+        "message": "running",
+        "time": datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S"),
+        "timezone": "Asia/Kuala_Lumpur",
+        "tickers_count": len(ALL_TICKERS)
+    })
 
 @app.route("/run-scan")
 def run_scan_now():
-    settings = load_settings()
-    sector_results = run_scan()
-    message = format_message(sector_results)
+    results = run_scan()
+    message = build_message(results)
+    send_telegram_message(message)
+    return jsonify({
+        "ok": True,
+        "count": len(results),
+        "results": results[:20]
+    })
 
-    send_telegram_message(
-        message,
-        settings.get("telegram_bot_token"),
-        settings.get("telegram_chat_id")
-    )
-
-    return jsonify(sector_results)
-
+@app.route("/test-telegram")
+def test_telegram():
+    send_telegram_message("✅ Telegram 测试成功：提前预警名单版扫描器已连通")
+    return jsonify({"ok": True, "message": "Telegram sent"})
 
 # =========================
-# 启动
+# 主程序
 # =========================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    print("Using port:", port)
-
-    threading.Thread(target=scheduler_loop, daemon=True).start()
-
-    app.run(host="0.0.0.0", port=port)
+    threading.Thread(target=schedule_runner, daemon=True).start()
+    app.run(host="0.0.0.0", port=PORT)
