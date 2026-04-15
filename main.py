@@ -28,67 +28,201 @@ PORT = int(os.getenv("PORT", 8080))
 # yfinance 马股代码通常用 .KL
 # =========================
 STOCK_POOLS = {
-    "建筑": [
-        "GAMUDA.KL", "IJM.KL", "SUNCON.KL", "KERJAYA.KL", "MRCB.KL", "WCT.KL",
-        "HOHUP.KL", "MUDAJYA.KL", "PESONA.KL", "TRC.KL", "ECONBHD.KL", "DKLS.KL"
+    CONSTRUCTION = [
+        "5398.KL",  # GAMUDA
+        "5263.KL",  # SUNCON
+        "3336.KL",  # IJM
+        "7161.KL",  # KERJAYA
+        "3565.KL",  # WCEHB
+        "7195.KL",  # BNASTRA
+        "5293.KL",  # AME
+        "8052.KL",  # CGB
+        "8877.KL",  # EKOVEST
+        "9679.KL",  # WCT
+        "5329.KL",  # AZAMJAYA
+        "9571.KL",  # MITRA
+        "0198.KL",  # GDB
+        "5703.KL",  # MUHIBAH
+        "5006.KL",  # VARIA
+        "5171.KL",  # KIMLUN
     ],
-    "产业": [
-        "MAHSING.KL", "UOADEV.KL", "SUNWAY.KL", "SPSETIA.KL", "MATRIX.KL", "ECOWLD.KL",
-        "LBS.KL", "MKH.KL", "PARAMON.KL", "IOIPG.KL", "TITIJYA.KL", "KSL.KL"
+    INDUSTRIAL = [
+        "8869.KL",  # PMETAL
+        "5183.KL",  # PCHEM
+        "5211.KL",  # SUNWAY
+        "3794.KL",  # MCEMENT
+        "5273.KL",  # CHINHIN
+        "3034.KL",  # HAPSENG
+        "4731.KL",  # SCIENTX
+        "5340.KL",  # UMSINT
+        "0151.KL",  # KGB
+        "7172.KL",  # PMBTECH
+        "5151.KL",  # HEXTAR
+        "9822.KL",  # SAM
+        "0225.KL",  # SCGBHD
+        "5000.KL",  # HUMEIND
+        "3476.KL",  # KSENG
+        "0270.KL",  # NATIONGATE
     ],
-    "工业产品": [
-        "PMETAL.KL", "PANTECH.KL", "ANNJOO.KL", "CSCSTEL.KL", "HEXIND.KL", "SSTEEL.KL",
-        "HIL.KL", "KOBAY.KL", "UNIMECH.KL", "LYC.KL", "CHOOBEE.KL", "ENGTEX.KL"
+    CONSUMER = [
+        "7084.KL",  # NESTLE
+        "6033.KL",  # PETGAS
+        "1295.KL",  # PBBANK
+        "5211.KL",  # SUNWAY
+        "5296.KL",  # MRDIY
+        "7087.KL",  # QL
+        "3689.KL",  # F&N
+        "3522.KL",  # CENOMEN
+        "3182.KL",  # GENTING
+        "5337.KL",  # ECOSHOP
+        "3255.KL",  # HEIM
+        "4197.KL",  # HLI
+        "2836.KL",  # CARLSBG
+        "3301.KL",  # HLBANK (有些app放consumer但其实金融)
+        "4006.KL",  # ORIENT
+        "5238.KL",  # AEON
+        "2445.KL",  # KLK（有些分类不同）
+        "1619.KL",  # DKSH
+        "5210.KL",  # SFM
+        "0271.KL",  # CAB
+        "5298.KL",  # SPRITZER
+        "7052.KL",  # PADINI
     ],
-    "科技": [
-        "INARI.KL", "MPI.KL", "DSONIC.KL", "FRONTKN.KL", "GENETEC.KL", "GREATEC.KL",
-        "UWC.KL", "VITROX.KL", "MI.KL", "OPSTAR.KL", "SNS.KL", "ITMAX.KL"
+    TECH = [
+        "0097.KL",  # VITROX
+        "0128.KL",  # FRONTKN
+        "3867.KL",  # MPI
+        "0138.KL",  # ZETRIX
+        "0166.KL",  # INARI
+        "0208.KL",  # GREATEC
+        "5309.KL",  # ITMAX
+        "5292.KL",  # UWC
+        "5005.KL",  # UNISEM
+        "5286.KL",  # MI
     ],
-    "能源": [
-        "DIALOG.KL", "VELESTO.KL", "HIBISCS.KL", "DAYANG.KL", "CARIMIN.KL", "DELEUM.KL",
-        "YINSON.KL", "PENERGY.KL", "UZMA.KL", "SAPNRG.KL", "T7GLOBAL.KL", "PETRONM.KL"
+    FINANCE = [
+        "1155.KL",  # MAYBANK
+        "1295.KL",  # PBBANK
+        "1023.KL",  # CIMB
+        "1066.KL",  # RHB
+        "5819.KL",  # HLBANK
+        "2488.KL",  # ALLIANCE
+        "5185.KL",  # AFFIN
     ],
-    "公用事业": [
-        "TENAGA.KL", "YTLPOWR.KL", "MALAKOF.KL", "RANHILL.KL", "MNHLDG.KL", "EDEN.KL",
-        "PBA.KL", "SALCON.KL", "KPOWER.KL", "CENERGY.KL", "TALIWRK.KL", "KEINHIN.KL"
+    PLANTATION = [
+        "5285.KL",  # SIMEPLT
+        "1961.KL",  # IOICORP
+        "2445.KL",  # KLK
+        "2291.KL",  # UTDPLET
+        "1899.KL",  # BKAWAN
+        "5029.KL",  # FGV
+        "5113.KL",  # TAANN
+        "5138.KL",  # HSPLANT
     ],
-    "消费": [
-        "QL.KL", "NESTLE.KL", "F&N.KL", "SPRITZER.KL", "CARLSBG.KL", "HEIM.KL",
-        "AEON.KL", "MRDIY.KL", "ECOSHOP.KL", "PADINI.KL", "BONIA.KL", "ORIENTAL.KL"
+    REIT = [
+        "5235SS.KL",  # KLCC
+        "5227.KL",    # IGBREIT
+        "5176.KL",    # SUNREIT
+        "5212.KL",    # PAVREIT
+        "5106.KL",    # AXREIT
+        "5180.KL",    # YTLREIT
     ],
-    "医疗": [
-        "IHH.KL", "KPJ.KL", "PHARMA.KL", "TMCLIFE.KL", "CAREPLS.KL", "KOSSAN.KL",
-        "TOPGLOV.KL", "SUPERMX.KL", "HARTA.KL", "DUOPHARMA.KL", "LKL.KL", "YSPSAH.KL"
+    PROPERTY = [
+        "5249.KL",  # IOIPG
+        "5283.KL",  # TANCO
+        "5288.KL",  # SIMEPROP
+        "5209.KL",  # ECOWLD
+        "5053.KL",  # OSK
+        "5606.KL",  # IGB
+        "5200.KL",  # UOADEV
+        "8664.KL",  # SPSETIA
+        "5038.KL",  # KSL
+        "0188.KL",  # TRIPLC
+        "8583.KL",  # MAHSING
+        "3239.KL",  # MATRIX
     ],
-    "交通物流": [
-        "MISC.KL", "WESTPORTS.KL", "TASCO.KL", "HARBOUR.KL", "PRKCORP.KL", "AIRPORT.KL",
-        "POS.KL", "FM.KL", "DKSH.KL", "GDEX.KL", "SWIFT.KL", "KTM.KL"
+    HEALTHCARE = [
+        "5225.KL",  # IHH
+        "0220.KL",  # SUNM
+        "5878.KL",  # KPJ
+        "7113.KL",  # TOPGLOV
+        "5168.KL",  # HARTA
+        "7153.KL",  # KOSSAN
+        "7081.KL",  # PHARMA
+        "7148.KL",  # DPHARMA
+        "7106.KL",  # SUPERMX
+        "7099.KL",  # TMCLIFE
     ],
-    "种植": [
-        "SIMEPLT.KL", "IOICORP.KL", "KLK.KL", "FGV.KL", "TAANN.KL", "BKAWAN.KL",
-        "BPLANT.KL", "JTIASA.KL", "BALU.KL", "HSPLANT.KL", "SOP.KL", "TSH.KL"
+    ENERGY = [
+        "7277.KL",  # DIALOG
+        "7293.KL",  # YINSON
+        "0215.KL",  # SLVEST
+        "5243.KL",  # VELESTO
+        "5216.KL",  # ARMADA
+        "5141.KL",  # DAYANG
+        "6633.KL",  # PETRONM
+        "5255.KL",  # HIBISCS
+        "0193.KL",  # KINERGY
+        "5166.KL",  # WASCO
+        "5283.KL",  # SAMAIDEN
     ],
-    "金融": [
-        "MAYBANK.KL", "PBBANK.KL", "CIMB.KL", "RHB.KL", "AMBANK.KL", "HLBANK.KL",
-        "ABMB.KL", "AFFIN.KL", "ALLIANCE.KL", "MBSB.KL", "BIMB.KL", "HLFG.KL"
+    TELECOM = [
+        "6947.KL",  # CDB
+        "6012.KL",  # MAXIS
+        "4863.KL",  # TM
+        "6888.KL",  # AXIATA
+        "5031.KL",  # TIMECOM
+        "5332.KL",  # REACHTEN
+        "0172.KL",  # OCK
+        "6399.KL",  # ASTRO
+        "4502.KL",  # MEDIA
+        "0032.KL",  # REDTONE
+        "6084.KL",  # STAR
+        "5090.KL"   # MEDIAC
     ],
-    "电信": [
-        "TM.KL", "MAXIS.KL", "CELCOMDIGI.KL", "TIME.KL", "AXIATA.KL", "REDTONE.KL",
-        "OCK.KL", "REACH.KL", "BINACOM.KL", "OPCOM.KL", "NEXG.KL", "XOX.KL"
+    TRANSPORT = [
+        "3816.KL",  # MISC
+        "5246.KL",  # WPRTS
+        "5032.KL",  # BIPORT
+        "5136.KL",  # HEXTECH
+        "5348.KL",  # ORKIM
+        "5173.KL",  # SYGROUP
+        "0078.KL",  # GDEX
+        "2062.KL",  # HARBOUR
+        "6521.KL",  # SURIA
+        "5259.KL"   # AVANGAAD
     ],
-    "可再生能源/主题股": [
-        "SLVEST.KL", "CYPARK.KL", "SAMAIDEN.KL", "SUNVIEW.KL", "KINERGY.KL", "SUNZEN.KL",
-        "PNEPCB.KL", "CORAZA.KL", "TEXCYCL.KL", "WCT.KL", "GENTING.KL", "PETRONASDAG.KL"
+    UTILITIES = [
+        "5347.KL",  # TENAGA
+        "6033.KL",  # PETGAS
+        "6742.KL",  # YTLPOWR
+        "4677.KL",  # YTL
+        "5209.KL",  # GASMSIA
+        "5264.KL",  # MALAKOF
+        "3069.KL",  # MFCB
+        "5272.KL",  # RANHILL
+        "8524.KL",  # TALIWRK
+        "5041.KL",  # PBA
+        "8567.KL",  # SALCON
+        "7471.KL"   # EDEN
     ]
 }
 
-ALL_TICKERS = []
-_seen = set()
-for sector, tickers in STOCK_POOLS.items():
-    for t in tickers:
-        if t not in _seen:
-            _seen.add(t)
-            ALL_TICKERS.append(t)
+ALL_TICKERS = (
+    UTILITIES +
+    TRANSPORT +
+    TELECOM +
+    ENERGY +
+    HEALTHCARE +
+    PROPERTY +
+    REIT +
+    PLANTATION +
+    FINANCE +
+    TECH +
+    CONSUMER +
+    INDUSTRIAL +
+    CONSTRUCTION
+)
 
 # =========================
 # Telegram
