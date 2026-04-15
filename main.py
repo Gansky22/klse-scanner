@@ -24,191 +24,82 @@ ENABLE_TELEGRAM = os.getenv("ENABLE_TELEGRAM", "true").lower() == "true"
 PORT = int(os.getenv("PORT", 8080))
 
 # =========================
-# 股票池（可自行继续加）
-# yfinance 马股代码通常用 .KL
+# 股票池（全部用数字代码.KL）
 # =========================
-STOCK_POOLS = {
-    CONSTRUCTION = [
-        "5398.KL",  # GAMUDA
-        "5263.KL",  # SUNCON
-        "3336.KL",  # IJM
-        "7161.KL",  # KERJAYA
-        "3565.KL",  # WCEHB
-        "7195.KL",  # BNASTRA
-        "5293.KL",  # AME
-        "8052.KL",  # CGB
-        "8877.KL",  # EKOVEST
-        "9679.KL",  # WCT
-        "5329.KL",  # AZAMJAYA
-        "9571.KL",  # MITRA
-        "0198.KL",  # GDB
-        "5703.KL",  # MUHIBAH
-        "5006.KL",  # VARIA
-        "5171.KL",  # KIMLUN
-    ],
-    INDUSTRIAL = [
-        "8869.KL",  # PMETAL
-        "5183.KL",  # PCHEM
-        "5211.KL",  # SUNWAY
-        "3794.KL",  # MCEMENT
-        "5273.KL",  # CHINHIN
-        "3034.KL",  # HAPSENG
-        "4731.KL",  # SCIENTX
-        "5340.KL",  # UMSINT
-        "0151.KL",  # KGB
-        "7172.KL",  # PMBTECH
-        "5151.KL",  # HEXTAR
-        "9822.KL",  # SAM
-        "0225.KL",  # SCGBHD
-        "5000.KL",  # HUMEIND
-        "3476.KL",  # KSENG
-        "0270.KL",  # NATIONGATE
-    ],
-    CONSUMER = [
-        "7084.KL",  # NESTLE
-        "6033.KL",  # PETGAS
-        "1295.KL",  # PBBANK
-        "5211.KL",  # SUNWAY
-        "5296.KL",  # MRDIY
-        "7087.KL",  # QL
-        "3689.KL",  # F&N
-        "3522.KL",  # CENOMEN
-        "3182.KL",  # GENTING
-        "5337.KL",  # ECOSHOP
-        "3255.KL",  # HEIM
-        "4197.KL",  # HLI
-        "2836.KL",  # CARLSBG
-        "3301.KL",  # HLBANK (有些app放consumer但其实金融)
-        "4006.KL",  # ORIENT
-        "5238.KL",  # AEON
-        "2445.KL",  # KLK（有些分类不同）
-        "1619.KL",  # DKSH
-        "5210.KL",  # SFM
-        "0271.KL",  # CAB
-        "5298.KL",  # SPRITZER
-        "7052.KL",  # PADINI
-    ],
-    TECH = [
-        "0097.KL",  # VITROX
-        "0128.KL",  # FRONTKN
-        "3867.KL",  # MPI
-        "0138.KL",  # ZETRIX
-        "0166.KL",  # INARI
-        "0208.KL",  # GREATEC
-        "5309.KL",  # ITMAX
-        "5292.KL",  # UWC
-        "5005.KL",  # UNISEM
-        "5286.KL",  # MI
-    ],
-    FINANCE = [
-        "1155.KL",  # MAYBANK
-        "1295.KL",  # PBBANK
-        "1023.KL",  # CIMB
-        "1066.KL",  # RHB
-        "5819.KL",  # HLBANK
-        "2488.KL",  # ALLIANCE
-        "5185.KL",  # AFFIN
-    ],
-    PLANTATION = [
-        "5285.KL",  # SIMEPLT
-        "1961.KL",  # IOICORP
-        "2445.KL",  # KLK
-        "2291.KL",  # UTDPLET
-        "1899.KL",  # BKAWAN
-        "5029.KL",  # FGV
-        "5113.KL",  # TAANN
-        "5138.KL",  # HSPLANT
-    ],
-    REIT = [
-        "5235SS.KL",  # KLCC
-        "5227.KL",    # IGBREIT
-        "5176.KL",    # SUNREIT
-        "5212.KL",    # PAVREIT
-        "5106.KL",    # AXREIT
-        "5180.KL",    # YTLREIT
-    ],
-    PROPERTY = [
-        "5249.KL",  # IOIPG
-        "5283.KL",  # TANCO
-        "5288.KL",  # SIMEPROP
-        "5209.KL",  # ECOWLD
-        "5053.KL",  # OSK
-        "5606.KL",  # IGB
-        "5200.KL",  # UOADEV
-        "8664.KL",  # SPSETIA
-        "5038.KL",  # KSL
-        "0188.KL",  # TRIPLC
-        "8583.KL",  # MAHSING
-        "3239.KL",  # MATRIX
-    ],
-    HEALTHCARE = [
-        "5225.KL",  # IHH
-        "0220.KL",  # SUNM
-        "5878.KL",  # KPJ
-        "7113.KL",  # TOPGLOV
-        "5168.KL",  # HARTA
-        "7153.KL",  # KOSSAN
-        "7081.KL",  # PHARMA
-        "7148.KL",  # DPHARMA
-        "7106.KL",  # SUPERMX
-        "7099.KL",  # TMCLIFE
-    ],
-    ENERGY = [
-        "7277.KL",  # DIALOG
-        "7293.KL",  # YINSON
-        "0215.KL",  # SLVEST
-        "5243.KL",  # VELESTO
-        "5216.KL",  # ARMADA
-        "5141.KL",  # DAYANG
-        "6633.KL",  # PETRONM
-        "5255.KL",  # HIBISCS
-        "0193.KL",  # KINERGY
-        "5166.KL",  # WASCO
-        "5283.KL",  # SAMAIDEN
-    ],
-    TELECOM = [
-        "6947.KL",  # CDB
-        "6012.KL",  # MAXIS
-        "4863.KL",  # TM
-        "6888.KL",  # AXIATA
-        "5031.KL",  # TIMECOM
-        "5332.KL",  # REACHTEN
-        "0172.KL",  # OCK
-        "6399.KL",  # ASTRO
-        "4502.KL",  # MEDIA
-        "0032.KL",  # REDTONE
-        "6084.KL",  # STAR
-        "5090.KL"   # MEDIAC
-    ],
-    TRANSPORT = [
-        "3816.KL",  # MISC
-        "5246.KL",  # WPRTS
-        "5032.KL",  # BIPORT
-        "5136.KL",  # HEXTECH
-        "5348.KL",  # ORKIM
-        "5173.KL",  # SYGROUP
-        "0078.KL",  # GDEX
-        "2062.KL",  # HARBOUR
-        "6521.KL",  # SURIA
-        "5259.KL"   # AVANGAAD
-    ],
-    UTILITIES = [
-        "5347.KL",  # TENAGA
-        "6033.KL",  # PETGAS
-        "6742.KL",  # YTLPOWR
-        "4677.KL",  # YTL
-        "5209.KL",  # GASMSIA
-        "5264.KL",  # MALAKOF
-        "3069.KL",  # MFCB
-        "5272.KL",  # RANHILL
-        "8524.KL",  # TALIWRK
-        "5041.KL",  # PBA
-        "8567.KL",  # SALCON
-        "7471.KL"   # EDEN
-    ]
-}
 
-ALL_TICKERS = (
+UTILITIES = [
+    "5347.KL","6033.KL","6742.KL","4677.KL","5209.KL","5264.KL",
+    "3069.KL","5272.KL","8524.KL","5041.KL","8567.KL","7471.KL"
+]
+
+TRANSPORT = [
+    "3816.KL","5246.KL","5032.KL","5136.KL","5348.KL",
+    "5173.KL","0078.KL","2062.KL","6521.KL","5259.KL"
+]
+
+TELECOM = [
+    "6947.KL","6012.KL","4863.KL","6888.KL","5031.KL",
+    "5332.KL","0172.KL","6399.KL","4502.KL","0032.KL",
+    "6084.KL","5090.KL"
+]
+
+ENERGY = [
+    "7277.KL","7293.KL","0215.KL","5243.KL","5216.KL",
+    "5141.KL","6633.KL","5255.KL","0193.KL","5166.KL"
+]
+
+HEALTHCARE = [
+    "5225.KL","5878.KL","7113.KL","5168.KL","7153.KL",
+    "7081.KL","7148.KL","7106.KL","7099.KL"
+]
+
+PROPERTY = [
+    "5249.KL","5288.KL","5053.KL","5606.KL","5200.KL",
+    "8664.KL","5038.KL","0188.KL","8583.KL","3239.KL"
+]
+
+REIT = [
+    "5227.KL","5176.KL","5212.KL","5106.KL","5180.KL"
+]
+
+PLANTATION = [
+    "5285.KL","1961.KL","2445.KL","2291.KL","1899.KL",
+    "5029.KL","5113.KL","5138.KL"
+]
+
+FINANCE = [
+    "1155.KL","1295.KL","1023.KL","1066.KL",
+    "5819.KL","2488.KL","5185.KL"
+]
+
+TECH = [
+    "0097.KL","0128.KL","3867.KL","0138.KL","0166.KL",
+    "0208.KL","5309.KL","5292.KL","5005.KL","5286.KL"
+]
+
+CONSUMER = [
+    "7084.KL","1295.KL","5211.KL","5296.KL","7087.KL",
+    "3689.KL","3522.KL","3182.KL","5337.KL","3255.KL",
+    "4197.KL","2836.KL","4006.KL","5238.KL","1619.KL",
+    "5210.KL","5298.KL","7052.KL"
+]
+
+INDUSTRIAL = [
+    "8869.KL","5183.KL","5211.KL","3794.KL","5273.KL",
+    "3034.KL","4731.KL","5340.KL","0151.KL","7172.KL",
+    "5151.KL","9822.KL","0225.KL","5000.KL","3476.KL","0270.KL"
+]
+
+CONSTRUCTION = [
+    "5398.KL","5263.KL","3336.KL","7161.KL","3565.KL",
+    "7195.KL","5293.KL","8052.KL","8877.KL","9679.KL",
+    "5329.KL","9571.KL","0198.KL","5703.KL","5006.KL","5171.KL"
+]
+
+# =========================
+# 合并股票池（自动去重）
+# =========================
+ALL_TICKERS = list(set(
     UTILITIES +
     TRANSPORT +
     TELECOM +
@@ -222,7 +113,7 @@ ALL_TICKERS = (
     CONSUMER +
     INDUSTRIAL +
     CONSTRUCTION
-)
+))
 
 # =========================
 # Telegram
